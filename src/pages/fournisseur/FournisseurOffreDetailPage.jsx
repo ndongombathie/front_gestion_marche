@@ -62,7 +62,9 @@ export default function FournisseurOffreDetailPage() {
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState('')
+  const [imageUrls, setImageUrls] = useState({})
   const fileRefs = useRef({})
+  const imageRefs = useRef({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -95,10 +97,13 @@ export default function FournisseurOffreDetailPage() {
           informationsTechniques: data.informationsTechniques || '',
           observationsFournisseur: data.observationsFournisseur || '',
           lignes: (data.lignes || []).map((l) => ({
+            id: l.id,
             designation: l.designation,
             quantite: l.quantite,
             prixUnitaire: l.prixUnitaire ?? '',
             caracteristiques: l.caracteristiques || '',
+            imageId: l.imageId,
+            imageNom: l.imageNom,
           })),
         })
         if (data.appelOffreId) {
@@ -115,6 +120,29 @@ export default function FournisseurOffreDetailPage() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    const lignes = offre?.lignes || []
+    const avecImage = lignes.filter((l) => l.imageId)
+    if (!avecImage.length) {
+      setImageUrls({})
+      return
+    }
+    let actif = true
+    const urls = {}
+    Promise.all(avecImage.map(async (l) => {
+      try {
+        const response = await api.get(`/documents/${l.imageId}/download`, { responseType: 'blob' })
+        urls[l.id] = URL.createObjectURL(response.data)
+      } catch {
+        // L'aperçu n'est pas bloquant : l'image reste téléchargeable.
+      }
+    })).then(() => { if (actif) setImageUrls(urls) })
+    return () => {
+      actif = false
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [offre])
+
   const setLine = (i, key, value) => setForm({ ...form, lignes: form.lignes.map((l, idx) => (idx === i ? { ...l, [key]: value } : l)) })
 
   const payload = () => ({
@@ -124,6 +152,7 @@ export default function FournisseurOffreDetailPage() {
     informationsTechniques: form.informationsTechniques || null,
     observationsFournisseur: form.observationsFournisseur || null,
     lignes: form.lignes.filter((l) => l.designation).map((l) => ({
+      id: l.id || null,
       designation: l.designation,
       quantite: Number(l.quantite),
       prixUnitaire: l.prixUnitaire ? Number(l.prixUnitaire) : null,
@@ -183,6 +212,35 @@ export default function FournisseurOffreDetailPage() {
     }
   }
 
+  const uploadImage = async (index) => {
+    const ligne = form.lignes[index]
+    const input = imageRefs.current[ligne.id]
+    const file = input?.files?.[0]
+    if (!file) {
+      toast.error('Sélectionnez une image.')
+      return
+    }
+    if (!offre || !ligne.id) {
+      toast.error('Enregistrez d’abord le brouillon avant de joindre les images.')
+      return
+    }
+    setUploading(`image-${ligne.id}`)
+    try {
+      const body = new FormData()
+      body.append('fichier', file)
+      await unwrap(api.post(`/offres/${offre.id}/lignes/${ligne.id}/image`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }))
+      toast.success('Image du matériel téléversée')
+      if (input) input.value = ''
+      await load()
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setUploading('')
+    }
+  }
+
   const soumettre = async () => {
     if (!window.confirm('Soumettre définitivement votre offre ? Elle ne pourra plus être modifiée.')) return
     setSubmitting(true)
@@ -200,7 +258,8 @@ export default function FournisseurOffreDetailPage() {
   const required = useMemo(() => documentsRequis(offre), [offre])
   const obligatoires = required.filter((r) => r.obligatoire)
   const fournis = obligatoires.filter((r) => r.present).length
-  const canSubmit = obligatoires.every((r) => r.present)
+  const imagesCompletes = form.lignes.length > 0 && form.lignes.every((l) => l.imageId)
+  const canSubmit = obligatoires.every((r) => r.present) && imagesCompletes
   const isDraft = isNew || offre?.statut === 'BROUILLON'
 
   if (loading) return <LoadingScreen />
@@ -243,13 +302,45 @@ export default function FournisseurOffreDetailPage() {
                 <p className="mb-2 text-sm font-semibold text-slate-800">Détail des prix</p>
                 <div className="space-y-2">
                   {form.lignes.map((l, i) => (
-                    <div key={i} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1.4fr_80px_130px]">
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{l.designation}</p>
-                        <p className="text-xs text-slate-500">Quantité : {l.quantite}</p>
+                    <div key={i} className="rounded-xl border border-slate-200 p-3">
+                      <div className="grid gap-2 sm:grid-cols-[1.4fr_80px_130px]">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{l.designation}</p>
+                          <p className="text-xs text-slate-500">Quantité : {l.quantite}</p>
+                        </div>
+                        <div className="self-center text-xs text-slate-500">×</div>
+                        <Input type="number" min="0" value={l.prixUnitaire} onChange={(e) => setLine(i, 'prixUnitaire', e.target.value)} placeholder="PU (FCFA)" disabled={!isDraft} />
                       </div>
-                      <div className="self-center text-xs text-slate-500">×</div>
-                      <Input type="number" min="0" value={l.prixUnitaire} onChange={(e) => setLine(i, 'prixUnitaire', e.target.value)} placeholder="PU (FCFA)" disabled={!isDraft} />
+                      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+                        {l.imageId && imageUrls[l.id] ? (
+                          <img src={imageUrls[l.id]} alt={l.designation} className="h-16 w-16 rounded-lg border border-slate-200 object-cover" />
+                        ) : (
+                          <span className="grid h-16 w-16 place-items-center rounded-lg border border-dashed border-slate-300 px-1 text-center text-[10px] leading-tight text-slate-400">
+                            {l.imageId ? 'Image' : 'Sans image'}
+                          </span>
+                        )}
+                        <div className="flex flex-1 flex-wrap items-center gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-700">Image du matériel <span className="text-rose-600">*</span></p>
+                            <p className={`text-[11px] ${l.imageId ? 'text-primary-700' : 'text-amber-600'}`}>
+                              {l.imageId ? (l.imageNom || 'Image jointe') : 'Obligatoire avant la soumission'}
+                            </p>
+                          </div>
+                          {isDraft && l.id && (
+                            <>
+                              <input
+                                ref={(el) => (imageRefs.current[l.id] = el)}
+                                type="file"
+                                accept="image/png,image/jpeg"
+                                className="block max-w-[190px] text-xs text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-700 hover:file:bg-primary-100"
+                              />
+                              <Button size="sm" variant="secondary" loading={uploading === `image-${l.id}`} onClick={() => uploadImage(i)}>
+                                <Upload className="h-3.5 w-3.5" /> Téléverser
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -321,7 +412,14 @@ export default function FournisseurOffreDetailPage() {
               {offre.statut === 'BROUILLON' ? (
                 <>
                   {!canSubmit && (
-                    <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Toutes les pièces obligatoires doivent être jointes avant la soumission.</p>
+                    <div className="mt-2 space-y-1.5">
+                      {!imagesCompletes && (
+                        <p className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Une image est obligatoire pour chaque matériel.</p>
+                      )}
+                      {!obligatoires.every((r) => r.present) && (
+                        <p className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Toutes les pièces obligatoires doivent être jointes avant la soumission.</p>
+                      )}
+                    </div>
                   )}
                   <Button onClick={soumettre} loading={submitting} disabled={!canSubmit} className="mt-3 w-full"><Send className="h-4 w-4" /> Soumettre l’offre</Button>
                   <p className="mt-2 flex items-center justify-center gap-1 text-[11px] text-slate-400"><ShieldCheck className="h-3 w-3" /> Soumission définitive et horodatée</p>

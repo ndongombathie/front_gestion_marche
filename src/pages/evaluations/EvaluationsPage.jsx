@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Award, CheckCircle2, ClipboardCheck, Gavel, Medal, Scale, Search, Star, Users } from 'lucide-react'
+import { Award, CheckCircle2, ClipboardCheck, Download, Eye, FileImage, FileText, Gavel, Medal, Scale, Search, Star, Users } from 'lucide-react'
 import { api, errorMessage, unwrap } from '../../lib/api'
 import { dateShort, fcfa, humanize } from '../../lib/format'
 import { useAuth } from '../../contexts/AuthContext'
@@ -31,6 +31,7 @@ export default function EvaluationsPage() {
   const [consolidation, setConsolidation] = useState(null)
   const [evaluating, setEvaluating] = useState(null)
   const [proposing, setProposing] = useState(null)
+  const [dossier, setDossier] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const selectedId = params.get('ao')
@@ -185,11 +186,14 @@ export default function EvaluationsPage() {
                               ) : '—'}
                             </td>
                             <td className="text-right">
-                              {isCommission ? (
-                                <Button size="sm" onClick={() => setEvaluating(o)}><Star className="h-3.5 w-3.5" /> Évaluer</Button>
-                              ) : (
-                                <span className="text-xs text-slate-400">Lecture seule</span>
-                              )}
+                              <div className="flex items-center justify-end gap-2">
+                                <Button size="sm" variant="secondary" onClick={() => setDossier(o)}><Eye className="h-3.5 w-3.5" /> Dossier</Button>
+                                {isCommission ? (
+                                  <Button size="sm" onClick={() => setEvaluating(o)}><Star className="h-3.5 w-3.5" /> Évaluer</Button>
+                                ) : (
+                                  <span className="text-xs text-slate-400">Lecture seule</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )
@@ -270,6 +274,7 @@ export default function EvaluationsPage() {
         onClose={() => setProposing(null)}
         onDone={() => { setProposing(null); setReloadKey((k) => k + 1); toast.success('Proposition d’attribution enregistrée') }}
       />
+      <OfferDossierModal offer={dossier} onClose={() => setDossier(null)} />
     </div>
   )
 }
@@ -367,6 +372,16 @@ function EvaluationModal({ offer, criteres, user, onClose, onDone }) {
             {existing.some((e) => e.membreId === user?.id) && ' Vous pouvez mettre à jour la vôtre.'}
           </div>
         )}
+        {offer && (
+          <details className="rounded-xl border border-slate-200">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+              Pièces et images fournies par le fournisseur
+            </summary>
+            <div className="border-t border-slate-100 px-4 py-4">
+              <OfferDossier offer={offer} />
+            </div>
+          </details>
+        )}
         {criteres.map((c) => (
           <div key={c.id} className="rounded-xl border border-slate-200 p-4">
             <div className="flex items-center justify-between gap-2">
@@ -443,4 +458,196 @@ function ProposalModal({ offer, ao, onClose, onDone }) {
       </div>
     </Modal>
   )
+}
+
+function OfferDossierModal({ offer, onClose }) {
+  return (
+    <Modal
+      open={Boolean(offer)}
+      onClose={onClose}
+      title="Dossier du fournisseur"
+      description={offer ? `${offer.raisonSociale} · ${offer.reference || 'Référence non attribuée'}` : ''}
+      size="lg"
+      footer={<Button variant="secondary" onClick={onClose}>Fermer</Button>}
+    >
+      {offer && <OfferDossier offer={offer} />}
+    </Modal>
+  )
+}
+
+function OfferDossier({ offer }) {
+  const imageUrls = useOfferImages(offer)
+  const documents = offer.documents || []
+  const lignes = offer.lignes || []
+  const withImages = lignes.filter((l) => l.imageId)
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Info label="Montant" value={fcfa(offer.montant)} />
+        <Info label="Délai" value={offer.delaiLivraisonJours ? `${offer.delaiLivraisonJours} jours` : '—'} />
+        <Info label="Statut" value={<Badge value={offer.statut} />} />
+      </div>
+
+      {(offer.informationsTechniques || offer.observationsFournisseur) && (
+        <div className="space-y-3">
+          {offer.informationsTechniques && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Informations techniques</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{offer.informationsTechniques}</p>
+            </div>
+          )}
+          {offer.observationsFournisseur && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Observations du fournisseur</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{offer.observationsFournisseur}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary-600" />
+          <h3 className="font-display text-sm font-bold text-slate-900">Documents fournis</h3>
+          <span className="text-xs text-slate-400">{documents.length}</span>
+        </div>
+        {documents.length ? (
+          <div className="mt-2 space-y-2">
+            {documents.map((doc) => (
+              <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">{doc.nom}</p>
+                  <p className="text-[11px] text-slate-500">{humanize(doc.type)} · {formatTaille(doc.taille)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {doc.apercuPossible && (
+                    <Button size="sm" variant="secondary" onClick={() => previewDocument(doc)}>
+                      <Eye className="h-3.5 w-3.5" /> Visualiser
+                    </Button>
+                  )}
+                  <Button size="sm" variant="secondary" onClick={() => downloadDocument(doc)}>
+                    <Download className="h-3.5 w-3.5" /> Télécharger
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-slate-500">Aucun document joint à cette offre.</p>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2">
+          <FileImage className="h-4 w-4 text-primary-600" />
+          <h3 className="font-display text-sm font-bold text-slate-900">Images des matériels</h3>
+          <span className="text-xs text-slate-400">{withImages.length} / {lignes.length}</span>
+        </div>
+        {lignes.length ? (
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {lignes.map((ligne) => (
+              <div key={ligne.id} className="flex gap-3 rounded-xl border border-slate-200 p-3">
+                {ligne.imageId && imageUrls[ligne.id] ? (
+                  <a href={imageUrls[ligne.id]} target="_blank" rel="noreferrer" className="shrink-0">
+                    <img src={imageUrls[ligne.id]} alt={ligne.designation} className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
+                  </a>
+                ) : (
+                  <span className="grid h-20 w-20 shrink-0 place-items-center rounded-lg border border-dashed border-slate-300 px-1 text-center text-[10px] text-slate-400">
+                    {ligne.imageId ? 'Chargement…' : 'Sans image'}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800">{ligne.designation}</p>
+                  <p className="text-xs text-slate-500">Quantité : {ligne.quantite}</p>
+                  {ligne.prixUnitaire != null && <p className="text-xs text-slate-500">PU : {fcfa(ligne.prixUnitaire)}</p>}
+                  {ligne.imageId && (
+                    <Button size="sm" variant="secondary" className="mt-2" onClick={() => previewDocument({ id: ligne.imageId, nom: ligne.imageNom || ligne.designation })}>
+                      <Eye className="h-3.5 w-3.5" /> Visualiser
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-slate-500">Aucun matériel renseigné.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Info({ label, value }) {
+  return (
+    <div className="rounded-xl bg-sand-50 px-3 py-2">
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <div className="mt-0.5 text-sm font-semibold text-slate-800">{value}</div>
+    </div>
+  )
+}
+
+function formatTaille(taille) {
+  if (!taille) return '—'
+  if (taille < 1024) return `${taille} o`
+  if (taille < 1024 * 1024) return `${(taille / 1024).toFixed(0)} Ko`
+  return `${(taille / (1024 * 1024)).toFixed(1)} Mo`
+}
+
+async function previewDocument(doc) {
+  try {
+    const response = await api.get(`/documents/${doc.id}/preview`, { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    const win = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!win) {
+      URL.revokeObjectURL(url)
+      toast.error('Autorisez les fenêtres pop-up pour visualiser le document.')
+      return
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (err) {
+    toast.error(errorMessage(err))
+  }
+}
+
+async function downloadDocument(doc) {
+  try {
+    const response = await api.get(`/documents/${doc.id}/download`, { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = doc.nom || 'document'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    toast.error(errorMessage(err))
+  }
+}
+
+function useOfferImages(offer) {
+  const [imageUrls, setImageUrls] = useState({})
+  useEffect(() => {
+    const lignes = (offer?.lignes || []).filter((l) => l.imageId)
+    if (!lignes.length) {
+      setImageUrls({})
+      return
+    }
+    let actif = true
+    const urls = {}
+    Promise.all(lignes.map(async (ligne) => {
+      try {
+        const response = await api.get(`/documents/${ligne.imageId}/preview`, { responseType: 'blob' })
+        urls[ligne.id] = URL.createObjectURL(response.data)
+      } catch {
+        // L'aperçu n'est pas bloquant : l'image reste téléchargeable.
+      }
+    })).then(() => { if (actif) setImageUrls(urls) })
+    return () => {
+      actif = false
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [offer])
+  return imageUrls
 }
