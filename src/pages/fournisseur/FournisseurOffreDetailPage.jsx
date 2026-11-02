@@ -24,6 +24,31 @@ const DOC_TYPES = [
   { value: 'DOCUMENT_ADMINISTRATIF', label: 'Documents administratifs', hint: 'NINEA, RCCM, attestations…' },
 ]
 
+function documentsRequis(offre) {
+  if (offre?.documentsObligatoires?.length) {
+    return offre.documentsObligatoires.map((doc) => ({
+      key: doc.id ?? doc.type,
+      id: doc.id,
+      type: doc.type,
+      label: doc.libelle,
+      hint: doc.description,
+      obligatoire: doc.obligatoire,
+      present: doc.fourni,
+      documents: doc.documents || [],
+    }))
+  }
+  return DOC_TYPES.map((doc) => ({
+    key: doc.value,
+    id: null,
+    type: doc.value,
+    label: doc.label,
+    hint: doc.hint,
+    obligatoire: true,
+    present: offre?.documents?.some((d) => d.type === doc.value),
+    documents: offre?.documents?.filter((d) => d.type === doc.value) || [],
+  }))
+}
+
 export default function FournisseurOffreDetailPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
@@ -129,8 +154,8 @@ export default function FournisseurOffreDetailPage() {
     }
   }
 
-  const upload = async (type) => {
-    const file = fileRefs.current[type]?.files?.[0]
+  const upload = async (doc) => {
+    const file = fileRefs.current[doc.key]?.files?.[0]
     if (!file) {
       toast.error('Sélectionnez un fichier.')
       return
@@ -139,16 +164,17 @@ export default function FournisseurOffreDetailPage() {
       toast.error('Enregistrez d’abord le brouillon avant de joindre des documents.')
       return
     }
-    setUploading(type)
+    setUploading(doc.key)
     try {
       const body = new FormData()
       body.append('fichier', file)
-      body.append('type', type)
+      if (doc.type) body.append('type', doc.type)
+      if (doc.id) body.append('documentObligatoireId', doc.id)
       body.append('entiteType', 'OFFRE')
       body.append('entiteId', offre.id)
       await unwrap(api.post('/documents/upload', body, { headers: { 'Content-Type': 'multipart/form-data' } }))
       toast.success('Document téléversé')
-      if (fileRefs.current[type]) fileRefs.current[type].value = ''
+      if (fileRefs.current[doc.key]) fileRefs.current[doc.key].value = ''
       load()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -171,8 +197,10 @@ export default function FournisseurOffreDetailPage() {
     }
   }
 
-  const required = useMemo(() => DOC_TYPES.map((t) => ({ ...t, present: offre?.documents?.some((d) => d.type === t.value) })), [offre])
-  const canSubmit = required.every((r) => r.present)
+  const required = useMemo(() => documentsRequis(offre), [offre])
+  const obligatoires = required.filter((r) => r.obligatoire)
+  const fournis = obligatoires.filter((r) => r.present).length
+  const canSubmit = obligatoires.every((r) => r.present)
   const isDraft = isNew || offre?.statut === 'BROUILLON'
 
   if (loading) return <LoadingScreen />
@@ -239,31 +267,32 @@ export default function FournisseurOffreDetailPage() {
             <Card className="p-5">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-base font-bold text-slate-900">Pièces du dossier</h2>
-                <span className={`text-xs font-semibold ${canSubmit ? 'text-primary-700' : 'text-amber-600'}`}>{required.filter((r) => r.present).length} / 3 obligatoires</span>
+                <span className={`text-xs font-semibold ${canSubmit ? 'text-primary-700' : 'text-amber-600'}`}>{fournis} / {obligatoires.length} obligatoires</span>
               </div>
-              <ProgressBar value={(required.filter((r) => r.present).length / 3) * 100} className="mt-2" />
+              <ProgressBar value={obligatoires.length ? (fournis / obligatoires.length) * 100 : 100} className="mt-2" />
               <div className="mt-4 space-y-3">
                 {required.map((doc) => (
-                  <div key={doc.value} className="rounded-xl border border-slate-200 p-3.5">
+                  <div key={doc.key} className="rounded-xl border border-slate-200 p-3.5">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                           {doc.present ? <CheckCircle2 className="h-4 w-4 text-primary-600" /> : <FileText className="h-4 w-4 text-slate-400" />} {doc.label}
+                          {!doc.obligatoire && <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Facultatif</span>}
                         </p>
-                        <p className="mt-0.5 text-xs text-slate-500">{doc.hint}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{doc.hint || 'Pièce à joindre au dossier.'}</p>
                       </div>
                       {doc.present && <span className="badge bg-primary-50 text-primary-700 ring-primary-200">Joint</span>}
                     </div>
                     <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                      {offre.documents?.filter((d) => d.type === doc.value).map((d) => (
+                      {doc.documents.map((d) => (
                         <a key={d.id} href={`/api/documents/${d.id}/download`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
                           <Download className="h-3.5 w-3.5" /> {d.nom}
                         </a>
                       ))}
                       {isDraft && (
                         <>
-                          <input ref={(el) => (fileRefs.current[doc.value] = el)} type="file" className="block max-w-[220px] text-xs text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-700 hover:file:bg-primary-100" />
-                          <Button size="sm" variant="secondary" loading={uploading === doc.value} onClick={() => upload(doc.value)}><Upload className="h-3.5 w-3.5" /> Téléverser</Button>
+                          <input ref={(el) => (fileRefs.current[doc.key] = el)} type="file" className="block max-w-[220px] text-xs text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-700 hover:file:bg-primary-100" />
+                          <Button size="sm" variant="secondary" loading={uploading === doc.key} onClick={() => upload(doc)}><Upload className="h-3.5 w-3.5" /> Téléverser</Button>
                         </>
                       )}
                     </div>
@@ -292,7 +321,7 @@ export default function FournisseurOffreDetailPage() {
               {offre.statut === 'BROUILLON' ? (
                 <>
                   {!canSubmit && (
-                    <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Les trois pièces obligatoires doivent être jointes avant la soumission.</p>
+                    <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Toutes les pièces obligatoires doivent être jointes avant la soumission.</p>
                   )}
                   <Button onClick={soumettre} loading={submitting} disabled={!canSubmit} className="mt-3 w-full"><Send className="h-4 w-4" /> Soumettre l’offre</Button>
                   <p className="mt-2 flex items-center justify-center gap-1 text-[11px] text-slate-400"><ShieldCheck className="h-3 w-3" /> Soumission définitive et horodatée</p>

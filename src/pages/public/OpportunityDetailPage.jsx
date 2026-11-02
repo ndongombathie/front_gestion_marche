@@ -112,9 +112,28 @@ export default function OpportunityDetailPage() {
                 </Section>
               )}
 
-              {ao.documentsObligatoires && (
+              {(ao.documentsObligatoiresDetails?.length > 0 || ao.documentsObligatoires) && (
                 <Section title="Documents obligatoires" icon={FileText}>
-                  <p className="whitespace-pre-line text-sm leading-7 text-slate-600">{ao.documentsObligatoires}</p>
+                  {ao.documentsObligatoiresDetails?.length > 0 ? (
+                    <ul className="space-y-2.5">
+                      {ao.documentsObligatoiresDetails.map((document) => (
+                        <li key={document.id} className="flex items-start gap-3 rounded-xl border border-slate-200 px-4 py-3">
+                          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary-50 text-primary-700">
+                            <FileText className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                              {document.libelle}
+                              {!document.obligatoire && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">Facultatif</span>}
+                            </span>
+                            {document.description && <span className="mt-0.5 block text-xs leading-5 text-slate-500">{document.description}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="whitespace-pre-line text-sm leading-7 text-slate-600">{ao.documentsObligatoires}</p>
+                  )}
                 </Section>
               )}
 

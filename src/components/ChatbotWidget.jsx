@@ -36,7 +36,7 @@ export default function ChatbotWidget() {
     setMessages((prev) => [...prev, { role: 'user', text: question }])
     setLoading(true)
     try {
-      const data = await unwrap(api.post('/chatbot', { message: question }))
+      const data = await unwrap(api.post('/chatbot', { question }))
       setMessages((prev) => [
         ...prev,
         { role: 'bot', text: data.reponse || 'Je n’ai pas trouvé de réponse.', results: data.resultats || [] },

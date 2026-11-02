@@ -173,17 +173,17 @@ export default function AppelsOffresPage() {
                         <td><Badge value={ao.statut} /></td>
                         <td>
                           <div className="flex items-center justify-end gap-1">
-                            <Link to={`/appels-offres/${ao.id}`} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-700" title="Détail"><Eye className="w-4 h-4" /></Link>
+                            <Link to={`/appels-offres/${ao.id}`} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-700" title="Détail"><Eye className="w-4 h-4" color="blue" /></Link>
                             {canManage && ao.statut === 'BROUILLON' && (
                               <>
-                                <button onClick={() => { setEditing(ao); setFormOpen(true) }} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-700" title="Modifier"><Pencil className="w-4 h-4" /></button>
-                                <button onClick={() => publish(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-primary-50 hover:text-primary-700" title="Publier"><Megaphone className="w-4 h-4" /></button>
+                                <button onClick={() => { setEditing(ao); setFormOpen(true) }} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-700" title="Modifier"><Pencil className="w-4 h-4" color='orange' /></button>
+                                <button onClick={() => publish(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-primary-50 hover:text-primary-700" title="Publier"><Megaphone className="w-4 h-4"  color='green'/></button>
                               </>
                             )}
                             {canManage && ao.statut === 'PUBLIE' && (
                               <>
-                                <button onClick={() => setProlong(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-amber-50 hover:text-amber-700" title="Prolonger"><Timer className="w-4 h-4" /></button>
-                                <button onClick={() => setCancel(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Annuler"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setProlong(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-amber-50 hover:text-amber-700" title="Prolonger"><Timer className="w-4 h-4" color='green'/></button>
+                                <button onClick={() => setCancel(ao)} className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Annuler"><X className="w-4 h-4" color='red' /></button>
                               </>
                             )}
                           </div>
@@ -334,7 +334,7 @@ function AoForm({ open, onClose, ao, marches, defaultMarcheId, onSaved }) {
         <Field label="Conditions de participation">
           <Textarea value={form.conditionsParticipation} onChange={(e) => setForm({ ...form, conditionsParticipation: e.target.value })} placeholder="Documents, qualifications, garanties…" />
         </Field>
-        <Field label="Documents obligatoires">
+        <Field label="Note sur les documents obligatoires" hint="La liste détaillée des pièces se configure depuis le détail du brouillon.">
           <Textarea value={form.documentsObligatoires} onChange={(e) => setForm({ ...form, documentsObligatoires: e.target.value })} placeholder="Offre technique, offre financière, pièces administratives…" />
         </Field>
         <Field label="Modalités de soumission">
