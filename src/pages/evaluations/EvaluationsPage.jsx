@@ -478,12 +478,14 @@ function OfferDossierModal({ offer, onClose }) {
 function OfferDossier({ offer }) {
   const imageUrls = useOfferImages(offer)
   const [lightbox, setLightbox] = useState(null)
+  const [docLightbox, setDocLightbox] = useState(null)
   const documents = offer.documents || []
   const lignes = offer.lignes || []
   const withImages = lignes.filter((l) => l.imageId)
   const images = lignes
     .filter((l) => l.imageId && imageUrls[l.id])
     .map((l) => ({ ...l, url: imageUrls[l.id] }))
+  const previewableDocuments = documents.filter((doc) => doc.apercuPossible)
 
   return (
     <div className="space-y-5">
@@ -518,24 +520,27 @@ function OfferDossier({ offer }) {
         </div>
         {documents.length ? (
           <div className="mt-2 space-y-2">
-            {documents.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">{doc.nom}</p>
-                  <p className="text-[11px] text-slate-500">{humanize(doc.type)} · {formatTaille(doc.taille)}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {doc.apercuPossible && (
-                    <Button size="sm" variant="secondary" onClick={() => previewDocument(doc)}>
-                      <Eye className="h-3.5 w-3.5" /> Visualiser
+            {documents.map((doc) => {
+              const docIndex = previewableDocuments.findIndex((d) => d.id === doc.id)
+              return (
+                <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-800">{doc.nom}</p>
+                    <p className="text-[11px] text-slate-500">{humanize(doc.type)} · {formatTaille(doc.taille)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {doc.apercuPossible && (
+                      <Button size="sm" variant="secondary" onClick={() => setDocLightbox(docIndex)}>
+                        <Eye className="h-3.5 w-3.5" /> Visualiser
+                      </Button>
+                    )}
+                    <Button size="sm" variant="secondary" onClick={() => downloadDocument(doc)}>
+                      <Download className="h-3.5 w-3.5" /> Télécharger
                     </Button>
-                  )}
-                  <Button size="sm" variant="secondary" onClick={() => downloadDocument(doc)}>
-                    <Download className="h-3.5 w-3.5" /> Télécharger
-                  </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <p className="mt-2 text-sm text-slate-500">Aucun document joint à cette offre.</p>
@@ -593,6 +598,15 @@ function OfferDossier({ offer }) {
           index={lightbox}
           onClose={() => setLightbox(null)}
           onChange={setLightbox}
+        />
+      )}
+
+      {docLightbox !== null && previewableDocuments[docLightbox] && (
+        <DocumentLightbox
+          documents={previewableDocuments}
+          index={docLightbox}
+          onClose={() => setDocLightbox(null)}
+          onChange={setDocLightbox}
         />
       )}
     </div>
@@ -660,6 +674,102 @@ function ImageLightbox({ images, index, onClose, onChange }) {
   )
 }
 
+function DocumentLightbox({ documents, index, onClose, onChange }) {
+  const doc = documents[index]
+  const [url, setUrl] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let actif = true
+    let objectUrl = null
+    setLoading(true)
+    setError('')
+    setUrl(null)
+    api.get(`/documents/${doc.id}/preview`, { responseType: 'blob' })
+      .then((response) => {
+        if (!actif) return
+        objectUrl = URL.createObjectURL(response.data)
+        setUrl(objectUrl)
+      })
+      .catch((err) => {
+        if (actif) setError(errorMessage(err))
+      })
+      .finally(() => {
+        if (actif) setLoading(false)
+      })
+    return () => {
+      actif = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [doc.id])
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+      } else if (event.key === 'ArrowLeft') {
+        onChange((index - 1 + documents.length) % documents.length)
+      } else if (event.key === 'ArrowRight') {
+        onChange((index + 1) % documents.length)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [index, documents.length, onClose, onChange])
+
+  if (!doc) return null
+
+  const isPdf = /\.pdf$/i.test(doc.nom || '') || doc.contentType === 'application/pdf'
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <div className="flex items-center justify-between gap-4 px-5 py-4 text-white">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{doc.nom}</p>
+          <p className="text-xs text-white/60">
+            {humanize(doc.type)} · {formatTaille(doc.taille)} · {index + 1} / {documents.length}
+          </p>
+        </div>
+        <button onClick={onClose} className="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Fermer">
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
+        {documents.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onChange((index - 1 + documents.length) % documents.length)}
+            className="absolute left-3 z-10 grid h-11 w-11 place-items-center rounded-full bg-slate-900/60 text-white hover:bg-slate-900/80"
+            aria-label="Document précédent"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        {loading ? (
+          <p className="text-sm text-white/70">Chargement du document…</p>
+        ) : error ? (
+          <p className="max-w-md px-8 text-center text-sm text-white/80">{error}</p>
+        ) : isPdf ? (
+          <iframe src={url} title={doc.nom} className="h-full w-full rounded-lg bg-white" />
+        ) : (
+          <img src={url} alt={doc.nom} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
+        )}
+        {documents.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onChange((index + 1) % documents.length)}
+            className="absolute right-3 z-10 grid h-11 w-11 place-items-center rounded-full bg-slate-900/60 text-white hover:bg-slate-900/80"
+            aria-label="Document suivant"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Info({ label, value }) {
   return (
     <div className="rounded-xl bg-sand-50 px-3 py-2">
@@ -674,22 +784,6 @@ function formatTaille(taille) {
   if (taille < 1024) return `${taille} o`
   if (taille < 1024 * 1024) return `${(taille / 1024).toFixed(0)} Ko`
   return `${(taille / (1024 * 1024)).toFixed(1)} Mo`
-}
-
-async function previewDocument(doc) {
-  try {
-    const response = await api.get(`/documents/${doc.id}/preview`, { responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const win = window.open(url, '_blank', 'noopener,noreferrer')
-    if (!win) {
-      URL.revokeObjectURL(url)
-      toast.error('Autorisez les fenêtres pop-up pour visualiser le document.')
-      return
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-  } catch (err) {
-    toast.error(errorMessage(err))
-  }
 }
 
 async function downloadDocument(doc) {
