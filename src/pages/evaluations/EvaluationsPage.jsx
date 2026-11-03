@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Award, CheckCircle2, ClipboardCheck, Download, Eye, FileImage, FileText, Gavel, Medal, Scale, Search, Star, Users } from 'lucide-react'
+import { Award, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Download, Eye, FileImage, FileText, Gavel, Medal, Scale, Search, Star, Users, X } from 'lucide-react'
 import { api, errorMessage, unwrap } from '../../lib/api'
 import { dateShort, fcfa, humanize } from '../../lib/format'
 import { useAuth } from '../../contexts/AuthContext'
@@ -477,9 +477,13 @@ function OfferDossierModal({ offer, onClose }) {
 
 function OfferDossier({ offer }) {
   const imageUrls = useOfferImages(offer)
+  const [lightbox, setLightbox] = useState(null)
   const documents = offer.documents || []
   const lignes = offer.lignes || []
   const withImages = lignes.filter((l) => l.imageId)
+  const images = lignes
+    .filter((l) => l.imageId && imageUrls[l.id])
+    .map((l) => ({ ...l, url: imageUrls[l.id] }))
 
   return (
     <div className="space-y-5">
@@ -546,32 +550,110 @@ function OfferDossier({ offer }) {
         </div>
         {lignes.length ? (
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {lignes.map((ligne) => (
-              <div key={ligne.id} className="flex gap-3 rounded-xl border border-slate-200 p-3">
-                {ligne.imageId && imageUrls[ligne.id] ? (
-                  <a href={imageUrls[ligne.id]} target="_blank" rel="noreferrer" className="shrink-0">
-                    <img src={imageUrls[ligne.id]} alt={ligne.designation} className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
-                  </a>
-                ) : (
-                  <span className="grid h-20 w-20 shrink-0 place-items-center rounded-lg border border-dashed border-slate-300 px-1 text-center text-[10px] text-slate-400">
-                    {ligne.imageId ? 'Chargement…' : 'Sans image'}
-                  </span>
-                )}
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800">{ligne.designation}</p>
-                  <p className="text-xs text-slate-500">Quantité : {ligne.quantite}</p>
-                  {ligne.prixUnitaire != null && <p className="text-xs text-slate-500">PU : {fcfa(ligne.prixUnitaire)}</p>}
-                  {ligne.imageId && (
-                    <Button size="sm" variant="secondary" className="mt-2" onClick={() => previewDocument({ id: ligne.imageId, nom: ligne.imageNom || ligne.designation })}>
-                      <Eye className="h-3.5 w-3.5" /> Visualiser
-                    </Button>
+            {lignes.map((ligne) => {
+              const imageIndex = images.findIndex((img) => img.id === ligne.id)
+              return (
+                <div key={ligne.id} className="flex gap-3 rounded-xl border border-slate-200 p-3">
+                  {ligne.imageId && imageUrls[ligne.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => setLightbox(imageIndex)}
+                      className="shrink-0 cursor-zoom-in"
+                      title="Agrandir l’image"
+                    >
+                      <img src={imageUrls[ligne.id]} alt={ligne.designation} className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
+                    </button>
+                  ) : (
+                    <span className="grid h-20 w-20 shrink-0 place-items-center rounded-lg border border-dashed border-slate-300 px-1 text-center text-[10px] text-slate-400">
+                      {ligne.imageId ? 'Chargement…' : 'Sans image'}
+                    </span>
                   )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{ligne.designation}</p>
+                    <p className="text-xs text-slate-500">Quantité : {ligne.quantite}</p>
+                    {ligne.prixUnitaire != null && <p className="text-xs text-slate-500">PU : {fcfa(ligne.prixUnitaire)}</p>}
+                    {ligne.imageId && (
+                      <Button size="sm" variant="secondary" className="mt-2" onClick={() => setLightbox(imageIndex)} disabled={imageIndex < 0}>
+                        <Eye className="h-3.5 w-3.5" /> Visualiser
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <p className="mt-2 text-sm text-slate-500">Aucun matériel renseigné.</p>
+        )}
+      </div>
+
+      {lightbox !== null && images[lightbox] && (
+        <ImageLightbox
+          images={images}
+          index={lightbox}
+          onClose={() => setLightbox(null)}
+          onChange={setLightbox}
+        />
+      )}
+    </div>
+  )
+}
+
+function ImageLightbox({ images, index, onClose, onChange }) {
+  const image = images[index]
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+      } else if (event.key === 'ArrowLeft') {
+        onChange((index - 1 + images.length) % images.length)
+      } else if (event.key === 'ArrowRight') {
+        onChange((index + 1) % images.length)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [index, images.length, onClose, onChange])
+
+  if (!image) return null
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <div className="flex items-center justify-between gap-4 px-5 py-4 text-white">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{image.designation}</p>
+          <p className="text-xs text-white/60">{index + 1} / {images.length}</p>
+        </div>
+        <button onClick={onClose} className="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Fermer">
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+      <div className="relative flex flex-1 items-center justify-center px-4 pb-6">
+        {images.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onChange((index - 1 + images.length) % images.length)}
+            className="absolute left-3 grid h-11 w-11 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="Image précédente"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        <img
+          src={image.url}
+          alt={image.designation}
+          className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+        />
+        {images.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onChange((index + 1) % images.length)}
+            className="absolute right-3 grid h-11 w-11 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="Image suivante"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
         )}
       </div>
     </div>
