@@ -49,9 +49,7 @@ export default function HomePage() {
         <div className="absolute border rounded-full -right-10 top-24 h-96 w-96 border-white/5" />
         <div className="container-page relative grid gap-12 py-16 sm:py-20 lg:grid-cols-[1.15fr_.85fr] lg:items-center lg:py-24">
           <div className="animate-fade-up">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-primary-100 backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5 text-amber-300" /> Plateforme officielle de passation
-            </span>
+            
             <h1 className="mt-5 max-w-3xl font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
               Les marchés publics de matériels, <span className="text-primary-300">simplifiés et transparents.</span>
             </h1>
